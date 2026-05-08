@@ -29,6 +29,30 @@ GATED_CONFIGS = {"B", "D"}
 UNGATED_CONFIGS = {"A", "C"}
 
 
+def format_duration(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours}h{minutes:02d}m{seconds:02d}s"
+    if minutes:
+        return f"{minutes}m{seconds:02d}s"
+    return f"{seconds}s"
+
+
+def print_progress(label: str, completed: int, total: int, start: float, errors: int = 0) -> None:
+    elapsed = time.perf_counter() - start
+    rate = completed / elapsed if elapsed > 0 else 0
+    remaining = (total - completed) / rate if rate > 0 else 0
+    pct = completed / total * 100 if total else 100
+    print(
+        f"  [{label}] {completed}/{total} ({pct:5.1f}%) "
+        f"elapsed={format_duration(elapsed)} eta={format_duration(remaining)} "
+        f"rate={rate * 60:.1f}/min errors={errors}",
+        flush=True,
+    )
+
+
 def get_client(server_url: str, tenant: str | None = None, user_idx: int = 0) -> OpenAI:
     if tenant:
         api_key = f"token-{tenant}-{user_idx}"
@@ -188,6 +212,7 @@ def main():
     parser.add_argument("--config", type=str, required=True, choices=["A", "B", "C", "D"])
     parser.add_argument("--server-url", type=str, default="http://localhost:8321")
     parser.add_argument("--data-dir", type=str, default="data")
+    parser.add_argument("--progress-every", type=int, default=10, help="Print progress every N probes")
     args = parser.parse_args()
 
     config = args.config
@@ -198,9 +223,13 @@ def main():
     print(f"  Orchestration: {'client-side' if config in CLIENT_SIDE_CONFIGS else 'server-side'}")
     print(f"  Retrieval: {'gated' if config in GATED_CONFIGS else 'ungated'}")
     print(f"  Total probes: {len(probes)}")
+    print(f"  Progress interval: {args.progress_every} probes")
     print()
 
     results = []
+    start = time.perf_counter()
+    errors = 0
+    progress_every = max(1, args.progress_every)
     for i, probe in enumerate(probes):
         if config in CLIENT_SIDE_CONFIGS:
             result = run_injection_client_side(args.server_url, probe, store_map, config)
@@ -208,9 +237,12 @@ def main():
             result = run_injection_server_side(args.server_url, probe, store_map, config)
 
         results.append(result)
+        if result.get("error") is not None:
+            errors += 1
 
-        if (i + 1) % 20 == 0:
-            print(f"  {i + 1}/{len(probes)} probes completed...")
+        completed = i + 1
+        if completed == 1 or completed % progress_every == 0 or completed == len(probes):
+            print_progress("Injection", completed, len(probes), start, errors)
 
     # Save results
     results_dir = os.path.join(args.data_dir, "results")
