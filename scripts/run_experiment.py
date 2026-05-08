@@ -20,7 +20,7 @@ import json
 import os
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 from openai import OpenAI
@@ -39,6 +39,32 @@ CLIENT_SIDE_CONFIGS = {"A", "B"}
 SERVER_SIDE_CONFIGS = {"C", "D"}
 GATED_CONFIGS = {"B", "D"}
 UNGATED_CONFIGS = {"A", "C"}
+
+
+def format_duration(seconds: float) -> str:
+    """Format seconds as a compact human-readable duration."""
+    seconds = max(0, int(seconds))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours}h{minutes:02d}m{seconds:02d}s"
+    if minutes:
+        return f"{minutes}m{seconds:02d}s"
+    return f"{seconds}s"
+
+
+def print_progress(label: str, completed: int, total: int, start: float, errors: int = 0) -> None:
+    """Print progress with elapsed time, estimated time remaining, and error count."""
+    elapsed = time.perf_counter() - start
+    rate = completed / elapsed if elapsed > 0 else 0
+    remaining = (total - completed) / rate if rate > 0 else 0
+    pct = completed / total * 100 if total else 100
+    print(
+        f"  [{label}] {completed}/{total} ({pct:5.1f}%) "
+        f"elapsed={format_duration(elapsed)} eta={format_duration(remaining)} "
+        f"rate={rate * 60:.1f}/min errors={errors}",
+        flush=True,
+    )
 
 
 def get_client(server_url: str, tenant: str | None = None, user_idx: int = 0) -> OpenAI:
@@ -228,23 +254,36 @@ def run_query_workload(
     config: str,
     label: str,
     num_runs: int = NUM_RUNS,
+    progress_every: int = 10,
 ) -> list[dict]:
     """Run a batch of queries, repeating each num_runs times for statistical rigor."""
     all_results = []
     total = len(queries) * num_runs
     completed = 0
+    errors = 0
+    start = time.perf_counter()
+    progress_every = max(1, progress_every)
+
+    print(
+        f"  [{label}] Starting {total} queries "
+        f"({len(queries)} queries x {num_runs} run{'s' if num_runs != 1 else ''})",
+        flush=True,
+    )
 
     for run_idx in range(num_runs):
+        print(f"  [{label}] Run {run_idx + 1}/{num_runs} starting...", flush=True)
         for query in queries:
             result = run_single_query(server_url, query, store_map, config)
             result["run_idx"] = run_idx
             all_results.append(result)
             completed += 1
+            if result.get("error") is not None:
+                errors += 1
 
-            if completed % 50 == 0:
-                print(f"  [{label}] {completed}/{total} queries completed...")
+            if completed == 1 or completed % progress_every == 0 or completed == total:
+                print_progress(label, completed, total, start, errors)
 
-    print(f"  [{label}] All {total} queries completed.")
+    print(f"  [{label}] All {total} queries completed in {format_duration(time.perf_counter() - start)}.")
     return all_results
 
 
@@ -254,6 +293,7 @@ def run_throughput_test(
     store_map: dict,
     config: str,
     concurrency_levels: list[int] = [1, 5, 10, 25],
+    progress_every: int = 5,
 ) -> list[dict]:
     """Measure throughput at various concurrency levels."""
     # Use a subset of authorized queries for throughput testing
@@ -261,22 +301,36 @@ def run_throughput_test(
     results = []
 
     for concurrency in concurrency_levels:
-        print(f"  [Throughput] Testing concurrency={concurrency}...")
+        print(f"  [Throughput] Testing concurrency={concurrency}...", flush=True)
 
         # Warm-up: run 5 queries
-        for q in test_queries[:5]:
-            run_single_query(server_url, q, store_map, config)
+        warmup_start = time.perf_counter()
+        warmup_errors = 0
+        for i, q in enumerate(test_queries[:5], start=1):
+            result = run_single_query(server_url, q, store_map, config)
+            if result.get("error") is not None:
+                warmup_errors += 1
+            print_progress(f"Throughput c={concurrency} warmup", i, 5, warmup_start, warmup_errors)
 
         # Timed run
         batch = test_queries[:concurrency * 2]  # enough queries to keep threads busy
 
+        print(f"  [Throughput] Timed run: {len(batch)} queries at concurrency={concurrency}", flush=True)
         start = time.perf_counter()
         with ThreadPoolExecutor(max_workers=concurrency) as executor:
             futures = [
                 executor.submit(run_single_query, server_url, q, store_map, config)
                 for q in batch
             ]
-            query_results = [f.result() for f in futures]
+            query_results = []
+            errors = 0
+            for i, future in enumerate(as_completed(futures), start=1):
+                result = future.result()
+                query_results.append(result)
+                if result.get("error") is not None:
+                    errors += 1
+                if i == 1 or i % max(1, progress_every) == 0 or i == len(batch):
+                    print_progress(f"Throughput c={concurrency}", i, len(batch), start, errors)
         wall_clock = time.perf_counter() - start
 
         qps = len(batch) / wall_clock
@@ -306,6 +360,7 @@ def main():
     parser.add_argument("--skip-probes", action="store_true", help="Skip cross-tenant probes")
     parser.add_argument("--skip-throughput", action="store_true", help="Skip throughput test")
     parser.add_argument("--num-runs", type=int, default=NUM_RUNS, help="Runs per query")
+    parser.add_argument("--progress-every", type=int, default=10, help="Print progress every N completed queries")
     args = parser.parse_args()
 
     config = args.config
@@ -314,6 +369,8 @@ def main():
     print(f"=== Running Experiment Config {config} ===")
     print(f"  Orchestration: {'client-side' if config in CLIENT_SIDE_CONFIGS else 'server-side'}")
     print(f"  Retrieval: {'gated' if config in GATED_CONFIGS else 'ungated'}")
+    print(f"  Runs per query: {args.num_runs}")
+    print(f"  Progress interval: {args.progress_every} queries")
     print(f"  Store map: {store_map}")
     print()
 
@@ -327,7 +384,7 @@ def main():
         auth_queries = load_queries(args.data_dir, "authorized")
         auth_results = run_query_workload(
             args.server_url, auth_queries, store_map, config,
-            "Authorized", args.num_runs,
+            "Authorized", args.num_runs, args.progress_every,
         )
         all_results.extend(auth_results)
 
@@ -337,7 +394,7 @@ def main():
         probe_queries = load_queries(args.data_dir, "cross_tenant_probe")
         probe_results = run_query_workload(
             args.server_url, probe_queries, store_map, config,
-            "Probes", args.num_runs,
+            "Probes", args.num_runs, args.progress_every,
         )
         all_results.extend(probe_results)
 
@@ -347,7 +404,7 @@ def main():
         print("\n--- Running throughput test ---")
         auth_queries = load_queries(args.data_dir, "authorized")
         throughput_results = run_throughput_test(
-            args.server_url, auth_queries, store_map, config,
+            args.server_url, auth_queries, store_map, config, progress_every=max(1, args.progress_every // 2),
         )
 
     # Save results (only if we ran queries, to avoid overwriting existing data)

@@ -24,6 +24,30 @@ TENANTS = ["finance", "engineering", "legal"]
 GATED_CONFIGS = {"B", "D"}
 
 
+def format_duration(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours}h{minutes:02d}m{seconds:02d}s"
+    if minutes:
+        return f"{minutes}m{seconds:02d}s"
+    return f"{seconds}s"
+
+
+def print_progress(label: str, completed: int, total: int, start: float) -> None:
+    elapsed = time.time() - start
+    rate = completed / elapsed if elapsed > 0 else 0
+    remaining = (total - completed) / rate if rate > 0 else 0
+    pct = completed / total * 100 if total else 100
+    print(
+        f"  [{label}] {completed}/{total} ({pct:5.1f}%) "
+        f"elapsed={format_duration(elapsed)} eta={format_duration(remaining)} "
+        f"rate={rate * 60:.1f}/min",
+        flush=True,
+    )
+
+
 def get_client(server_url: str, tenant: str | None = None, user_idx: int = 0) -> OpenAI:
     """Create an OpenAI client pointing at OGX."""
     if tenant:
@@ -108,6 +132,7 @@ def ingest_ungated(server_url: str, data_dir: str) -> dict:
     vs_id = create_vector_store(client, "shared-all-tenants")
 
     store_map = {"shared": vs_id}
+    start = time.time()
 
     for i, doc in enumerate(manifest):
         filepath = os.path.join(data_dir, "documents", doc["filename"])
@@ -122,8 +147,8 @@ def ingest_ungated(server_url: str, data_dir: str) -> dict:
             },
         )
 
-        if (i + 1) % 25 == 0:
-            print(f"  Uploaded {i + 1}/{len(manifest)} files...")
+        if (i + 1) == 1 or (i + 1) % 10 == 0 or (i + 1) == len(manifest):
+            print_progress("Ingest shared", i + 1, len(manifest), start)
 
     print(f"  Waiting for file processing to complete...")
     # Wait a bit for batch processing
@@ -148,6 +173,7 @@ def ingest_gated(server_url: str, data_dir: str) -> dict:
 
         # Upload only this tenant's documents
         tenant_docs = [d for d in manifest if d["tenant_id"] == tenant]
+        start = time.time()
 
         for i, doc in enumerate(tenant_docs):
             filepath = os.path.join(data_dir, "documents", doc["filename"])
@@ -162,8 +188,8 @@ def ingest_gated(server_url: str, data_dir: str) -> dict:
                 },
             )
 
-            if (i + 1) % 25 == 0:
-                print(f"  [{tenant}] Uploaded {i + 1}/{len(tenant_docs)} files...")
+            if (i + 1) == 1 or (i + 1) % 10 == 0 or (i + 1) == len(tenant_docs):
+                print_progress(f"Ingest {tenant}", i + 1, len(tenant_docs), start)
 
         print(f"  [{tenant}] Ingested {len(tenant_docs)} documents into {vs_id}")
 
