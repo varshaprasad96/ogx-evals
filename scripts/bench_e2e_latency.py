@@ -146,25 +146,22 @@ def setup_vector_store(ls_url: str, emb_model: str, emb_dim: int) -> str | None:
         print(f"  Failed to create vector store: {e}", file=sys.stderr)
         return None
 
-    # Insert tenant-A documents with metadata
-    for i, doc in enumerate(TENANT_A_DOCS):
-        try:
-            _post(f"{ls_url}/v1/vector_stores/{vs_id}/files", {
+    # Insert documents via /v1/vector-io/insert
+    chunks = []
+    for tenant_id, docs in [("tenant-a", TENANT_A_DOCS), ("tenant-b", TENANT_B_DOCS)]:
+        for i, doc in enumerate(docs):
+            chunks.append({
                 "content": doc,
-                "metadata": {"tenant_id": "tenant-a", "document_id": f"tenant-a-doc-{i}"},
-            }, timeout=120)
-        except Exception as e:
-            print(f"  Failed to insert tenant-a doc {i}: {e}", file=sys.stderr)
+                "metadata": {"tenant_id": tenant_id, "document_id": f"{tenant_id}-doc-{i}"},
+            })
 
-    # Insert tenant-B documents with metadata
-    for i, doc in enumerate(TENANT_B_DOCS):
-        try:
-            _post(f"{ls_url}/v1/vector_stores/{vs_id}/files", {
-                "content": doc,
-                "metadata": {"tenant_id": "tenant-b", "document_id": f"tenant-b-doc-{i}"},
-            }, timeout=120)
-        except Exception as e:
-            print(f"  Failed to insert tenant-b doc {i}: {e}", file=sys.stderr)
+    try:
+        _post(f"{ls_url}/v1/vector-io/insert", {
+            "vector_db_id": vs_id,
+            "chunks": chunks,
+        }, timeout=120)
+    except Exception as e:
+        print(f"  Failed to insert chunks: {e}", file=sys.stderr)
 
     print(f"  Inserted {len(TENANT_A_DOCS) + len(TENANT_B_DOCS)} documents")
     return vs_id
