@@ -64,13 +64,18 @@ def load_manifest(data_dir: str) -> list[dict]:
         return json.load(f)
 
 
-def create_vector_store(client: OpenAI, name: str, embedding_model: str = "openai/text-embedding-3-small") -> str:
+def create_vector_store(
+    client: OpenAI,
+    name: str,
+    embedding_model: str = "openai/text-embedding-3-small",
+    embedding_dimension: int = 1536,
+) -> str:
     """Create a vector store and return its ID."""
     vs = client.vector_stores.create(
         name=name,
         extra_body={
             "embedding_model": embedding_model,
-            "embedding_dimension": 1536,
+            "embedding_dimension": embedding_dimension,
         },
     )
     print(f"  Created vector store '{name}' -> {vs.id}")
@@ -123,13 +128,13 @@ def wait_for_file_processing(client: OpenAI, vector_store_id: str, file_id: str,
     return False
 
 
-def ingest_ungated(server_url: str, data_dir: str) -> dict:
+def ingest_ungated(server_url: str, data_dir: str, embedding_model: str, embedding_dimension: int) -> dict:
     """Ingest all documents into a single shared vector store (no auth)."""
     client = get_client(server_url)
     manifest = load_manifest(data_dir)
 
     print("Ingesting into shared vector store (ungated)...")
-    vs_id = create_vector_store(client, "shared-all-tenants")
+    vs_id = create_vector_store(client, "shared-all-tenants", embedding_model, embedding_dimension)
 
     store_map = {"shared": vs_id}
     start = time.time()
@@ -158,7 +163,7 @@ def ingest_ungated(server_url: str, data_dir: str) -> dict:
     return store_map
 
 
-def ingest_gated(server_url: str, data_dir: str) -> dict:
+def ingest_gated(server_url: str, data_dir: str, embedding_model: str, embedding_dimension: int) -> dict:
     """Ingest documents into per-tenant vector stores (with auth)."""
     manifest = load_manifest(data_dir)
 
@@ -168,7 +173,7 @@ def ingest_gated(server_url: str, data_dir: str) -> dict:
     for tenant in TENANTS:
         # Create vector store as tenant user (sets owner)
         client = get_client(server_url, tenant=tenant, user_idx=0)
-        vs_id = create_vector_store(client, f"vs-{tenant}")
+        vs_id = create_vector_store(client, f"vs-{tenant}", embedding_model, embedding_dimension)
         store_map[tenant] = vs_id
 
         # Upload only this tenant's documents
@@ -208,14 +213,18 @@ def main():
                         help="OGX server URL")
     parser.add_argument("--data-dir", type=str, default="data",
                         help="Data directory with generated documents")
+    parser.add_argument("--embedding-model", type=str, default="openai/text-embedding-3-small",
+                        help="Embedding model identifier (default: openai/text-embedding-3-small)")
+    parser.add_argument("--embedding-dimension", type=int, default=1536,
+                        help="Embedding vector dimension (default: 1536 for text-embedding-3-small)")
     args = parser.parse_args()
 
     is_gated = args.config in GATED_CONFIGS
 
     if is_gated:
-        store_map = ingest_gated(args.server_url, args.data_dir)
+        store_map = ingest_gated(args.server_url, args.data_dir, args.embedding_model, args.embedding_dimension)
     else:
-        store_map = ingest_ungated(args.server_url, args.data_dir)
+        store_map = ingest_ungated(args.server_url, args.data_dir, args.embedding_model, args.embedding_dimension)
 
     # Save store mapping for the experiment runner
     output_path = os.path.join(args.data_dir, "results", f"store_map_{args.config}.json")
