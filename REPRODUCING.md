@@ -103,6 +103,56 @@ To run a single config:
 
 ---
 
+## Using alternative models
+
+The default configs use OpenAI's `gpt-4o-mini` for inference and `text-embedding-3-small` (1536 dimensions) for embeddings. To reproduce with different models:
+
+### 1. Register models in the config YAML
+
+Each config YAML (A-D) contains a commented-out `models:` section. Uncomment it and fill in your model details:
+
+```yaml
+models:
+  - model_id: your-llm-model-id
+    provider_id: openai
+    provider_model_id: your-llm-model-id
+  - model_id: your-embedding-model-id
+    provider_id: openai
+    provider_model_id: your-embedding-model-id
+    model_type: embedding
+    metadata:
+      embedding_dimension: 768      # must match your embedding model
+```
+
+Also update `vector_stores.default_embedding_model.model_id` in the same file to match your embedding model.
+
+### 2. Set the correct embedding dimension during ingestion
+
+The ingestion script defaults to 1536 dimensions (for `text-embedding-3-small`). Pass `--embedding-dimension` and `--embedding-model` to match your model:
+
+```bash
+uv run python scripts/ingest_data.py \
+    --config D \
+    --embedding-model openai/your-embedding-model \
+    --embedding-dimension 768
+```
+
+### 3. Clear stale state between runs
+
+OGX registers models and vector stores in a SQLite kvstore under `~/.llama/distributions/experiment-{a,b,c,d}/`. If you re-run an experiment (especially after changing models), stale registrations can cause conflicts. Either:
+
+- Use the `--fresh` flag with `run_all.sh`:
+  ```bash
+  ./run_all.sh --config D --fresh
+  ```
+
+- Or manually wipe the state:
+  ```bash
+  rm -rf ~/.llama/distributions/experiment-{a,b,c,d}
+  ```
+
+---
+
 ## Reproducing Experiment 5 (GPU infrastructure)
 
 Experiment 5 measures OGX's routing and filtering overhead on self-hosted GPU infrastructure. The pre-computed results are in `data/results/e2e_latency_gpu.csv`.

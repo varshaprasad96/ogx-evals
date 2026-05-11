@@ -65,6 +65,18 @@ storage:
     conversations:
       table_name: openai_conversations
       backend: sql_default
+# -- To use alternative models, uncomment and edit the section below. -------
+# models:
+#   - model_id: your-llm-model-id
+#     provider_id: openai
+#     provider_model_id: your-llm-model-id
+#   - model_id: your-embedding-model-id
+#     provider_id: openai
+#     provider_model_id: your-embedding-model-id
+#     model_type: embedding
+#     metadata:
+#       embedding_dimension: 768      # must match your embedding model
+# -- Also update vector_stores.default_embedding_model.model_id below. ------
 registered_resources:
   models: []
   vector_dbs: []

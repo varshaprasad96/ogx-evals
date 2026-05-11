@@ -5,6 +5,7 @@
 #   ./run_all.sh                    # Run all 4 configs (A, B, C, D)
 #   ./run_all.sh --config D         # Run a single config
 #   ./run_all.sh --analysis-only    # Regenerate figures from existing results
+#   ./run_all.sh --fresh            # Wipe stale state before each config run
 #
 # Prerequisites:
 #   - Python 3.12+, uv (https://docs.astral.sh/uv/)
@@ -19,6 +20,7 @@ cd "$SCRIPT_DIR"
 # Defaults
 CONFIGS="A B C D"
 ANALYSIS_ONLY=false
+FRESH=false
 SERVER_URL="http://localhost:8321"
 AUTH_PORT=9999
 
@@ -27,6 +29,7 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --config) CONFIGS="$2"; shift 2 ;;
         --analysis-only) ANALYSIS_ONLY=true; shift ;;
+        --fresh) FRESH=true; shift ;;
         --server-url) SERVER_URL="$2"; shift 2 ;;
         *) echo "Unknown arg: $1"; exit 1 ;;
     esac
@@ -114,6 +117,15 @@ for CONFIG in $CONFIGS; do
         D) CONFIG_FILE="configs/config_d_gated_server.yaml"; NEEDS_AUTH=true ;;
         *) echo "Unknown config: $CONFIG"; exit 1 ;;
     esac
+
+    # Wipe stale state if --fresh
+    if $FRESH; then
+        DIST_DIR="$HOME/.llama/distributions/experiment-${CONFIG_LOWER}"
+        if [[ -d "$DIST_DIR" ]]; then
+            log_step "  Wiping stale state: $DIST_DIR"
+            rm -rf "$DIST_DIR"
+        fi
+    fi
 
     # Start auth server if needed
     if $NEEDS_AUTH; then
