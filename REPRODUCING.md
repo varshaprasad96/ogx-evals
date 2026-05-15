@@ -105,51 +105,63 @@ To run a single config:
 
 ## Using alternative models
 
-The default configs use OpenAI's `gpt-4o-mini` for inference and `text-embedding-3-small` (1536 dimensions) for embeddings. To reproduce with different models:
+The default configs use OpenAI's `gpt-4o-mini` for inference and `text-embedding-3-small` (1536 dimensions) for embeddings. All model references are configurable via environment variables:
 
-### 1. Register models in the config YAML
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OGX_MODEL_ID` | `openai/gpt-4o-mini` | Chat/inference model |
+| `OGX_EMBEDDING_MODEL` | `openai/text-embedding-3-small` | Embedding model |
+| `OGX_EMBEDDING_DIM` | `1536` | Embedding vector dimension |
 
-Each config YAML (A-D) contains a commented-out `models:` section. Uncomment it and fill in your model details:
-
-```yaml
-models:
-  - model_id: your-llm-model-id
-    provider_id: openai
-    provider_model_id: your-llm-model-id
-  - model_id: your-embedding-model-id
-    provider_id: openai
-    provider_model_id: your-embedding-model-id
-    model_type: embedding
-    metadata:
-      embedding_dimension: 768      # must match your embedding model
-```
-
-Also update `vector_stores.default_embedding_model.model_id` in the same file to match your embedding model.
-
-### 2. Set the correct embedding dimension during ingestion
-
-The ingestion script defaults to 1536 dimensions (for `text-embedding-3-small`). Pass `--embedding-dimension` and `--embedding-model` to match your model:
+### Ready-to-use: Ollama (no API key, no GPU required)
 
 ```bash
-uv run python scripts/ingest_data.py \
-    --config D \
-    --embedding-model openai/your-embedding-model \
-    --embedding-dimension 768
+# 1. Install and start Ollama
+ollama pull llama3.1:8b
+ollama pull nomic-embed-text
+ollama serve
+
+# 2. Set model env vars
+export OGX_MODEL_ID=ollama/llama3.1:8b
+export OGX_EMBEDDING_MODEL=ollama/nomic-embed-text
+export OGX_EMBEDDING_DIM=768
+
+# 3. Run with Ollama config
+./run_all.sh --config D --config-file configs/config_d_gated_server_ollama.yaml
 ```
 
-### 3. Clear stale state between runs
+Config file: `configs/config_d_gated_server_ollama.yaml` (pre-configured, no edits needed).
 
-OGX registers models and vector stores in a SQLite kvstore under `~/.llama/distributions/experiment-{a,b,c,d}/`. If you re-run an experiment (especially after changing models), stale registrations can cause conflicts. Either:
+### Ready-to-use: vLLM (requires GPU)
 
-- Use the `--fresh` flag with `run_all.sh`:
-  ```bash
-  ./run_all.sh --config D --fresh
-  ```
+```bash
+# 1. Start vLLM
+pip install vllm
+vllm serve meta-llama/Llama-3.1-8B-Instruct --port 8000
 
-- Or manually wipe the state:
-  ```bash
-  rm -rf ~/.llama/distributions/experiment-{a,b,c,d}
-  ```
+# 2. Set model env vars
+export OGX_MODEL_ID=vllm/meta-llama/Llama-3.1-8B-Instruct
+export OGX_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+export OGX_EMBEDDING_DIM=384
+
+# 3. Run with vLLM config
+./run_all.sh --config D --config-file configs/config_d_gated_server_vllm.yaml
+```
+
+Config file: `configs/config_d_gated_server_vllm.yaml` (uses sentence-transformers for embeddings on CPU, vLLM for chat on GPU).
+
+### Custom models
+
+For any other provider, set the three env vars and use the appropriate config YAML. The security claims (CTLR, AVR, injection leak rates) are model-independent — they depend on ABAC gating, not inference output.
+
+### Clear stale state between runs
+
+OGX registers models and vector stores in a SQLite kvstore under `~/.llama/distributions/`. If you re-run with different models, clear stale state:
+
+```bash
+./run_all.sh --config D --fresh
+# or manually: rm -rf ~/.llama/distributions/experiment-*
+```
 
 ---
 

@@ -1,3 +1,4 @@
+import os
 """
 Client-side RAG orchestration for Configs A and B.
 
@@ -18,7 +19,7 @@ from dataclasses import dataclass
 from openai import OpenAI
 
 
-MODEL_ID = "openai/gpt-4o-mini"
+MODEL_ID = os.environ.get("OGX_MODEL_ID", "openai/gpt-4o-mini")
 
 
 @dataclass

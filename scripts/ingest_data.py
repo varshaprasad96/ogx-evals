@@ -213,10 +213,12 @@ def main():
                         help="OGX server URL")
     parser.add_argument("--data-dir", type=str, default="data",
                         help="Data directory with generated documents")
-    parser.add_argument("--embedding-model", type=str, default="openai/text-embedding-3-small",
-                        help="Embedding model identifier (default: openai/text-embedding-3-small)")
-    parser.add_argument("--embedding-dimension", type=int, default=1536,
-                        help="Embedding vector dimension (default: 1536 for text-embedding-3-small)")
+    parser.add_argument("--embedding-model", type=str,
+                        default=os.environ.get("OGX_EMBEDDING_MODEL", "openai/text-embedding-3-small"),
+                        help="Embedding model (env: OGX_EMBEDDING_MODEL, default: openai/text-embedding-3-small)")
+    parser.add_argument("--embedding-dimension", type=int,
+                        default=int(os.environ.get("OGX_EMBEDDING_DIM", "1536")),
+                        help="Embedding dimension (env: OGX_EMBEDDING_DIM, default: 1536)")
     args = parser.parse_args()
 
     is_gated = args.config in GATED_CONFIGS

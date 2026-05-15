@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from client_orchestration import client_side_rag, search_vector_store
 
 TENANTS = ["finance", "engineering", "legal"]
-MODEL_ID = "openai/gpt-4o-mini"
+MODEL_ID = os.environ.get("OGX_MODEL_ID", "openai/gpt-4o-mini")
 CLIENT_SIDE_CONFIGS = {"A", "B"}
 GATED_CONFIGS = {"B", "D"}
 UNGATED_CONFIGS = {"A", "C"}

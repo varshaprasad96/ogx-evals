@@ -31,7 +31,7 @@ from client_orchestration import client_side_rag, search_vector_store
 
 
 TENANTS = ["finance", "engineering", "legal"]
-MODEL_ID = "openai/gpt-4o-mini"
+MODEL_ID = os.environ.get("OGX_MODEL_ID", "openai/gpt-4o-mini")
 NUM_RUNS = 3  # Repeat each query for statistical rigor
 
 # Config properties
