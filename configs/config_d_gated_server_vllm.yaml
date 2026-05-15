@@ -1,0 +1,128 @@
+# Config D (Server-Side + Gated) for vLLM
+# Uses locally-served models via vLLM — no API key needed.
+#
+# Prerequisites:
+#   pip install vllm
+#   vllm serve meta-llama/Llama-3.1-8B-Instruct --port 8000
+#
+# Then:
+#   export OGX_MODEL_ID=vllm/meta-llama/Llama-3.1-8B-Instruct
+#   export OGX_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+#   export OGX_EMBEDDING_DIM=384
+#   llama stack run configs/config_d_gated_server_vllm.yaml --port 8321
+#
+# Note: This config uses sentence-transformers for embeddings (CPU, inline)
+# since vLLM serves the chat model only.
+version: 2
+distro_name: experiment-gated-server-vllm
+apis:
+  - inference
+  - vector_io
+  - files
+  - file_processors
+  - responses
+  - tool_runtime
+providers:
+  inference:
+    - provider_id: vllm
+      provider_type: remote::vllm
+      config:
+        base_url: ${env.VLLM_URL:=http://localhost:8000/v1}
+    - provider_id: sentence-transformers
+      provider_type: inline::sentence-transformers
+      config: {}
+  vector_io:
+    - provider_id: sqlite-vec
+      provider_type: inline::sqlite-vec
+      config:
+        db_path: ${env.SQLITE_STORE_DIR:=~/.llama/distributions/experiment-d-vllm}/sqlite_vec.db
+        persistence:
+          namespace: vector_io::sqlite_vec
+          backend: kv_default
+  files:
+    - provider_id: builtin-files
+      provider_type: inline::localfs
+      config:
+        storage_dir: ${env.FILES_STORAGE_DIR:=~/.llama/distributions/experiment-d-vllm/files}
+        metadata_store:
+          table_name: files_metadata
+          backend: sql_default
+  file_processors:
+    - provider_id: pypdf
+      provider_type: inline::pypdf
+  responses:
+    - provider_id: builtin
+      provider_type: inline::builtin
+      config:
+        persistence:
+          agent_state:
+            namespace: agents
+            backend: kv_default
+          responses:
+            table_name: responses
+            backend: sql_default
+  tool_runtime:
+    - provider_id: file-search
+      provider_type: inline::file-search
+storage:
+  backends:
+    kv_default:
+      type: kv_sqlite
+      db_path: ${env.SQLITE_STORE_DIR:=~/.llama/distributions/experiment-d-vllm}/kvstore.db
+    sql_default:
+      type: sql_sqlite
+      db_path: ${env.SQLITE_STORE_DIR:=~/.llama/distributions/experiment-d-vllm}/sql_store.db
+  stores:
+    metadata:
+      namespace: registry
+      backend: kv_default
+    conversations:
+      table_name: openai_conversations
+      backend: sql_default
+models:
+  - model_id: vllm/meta-llama/Llama-3.1-8B-Instruct
+    provider_id: vllm
+    provider_model_id: meta-llama/Llama-3.1-8B-Instruct
+  - model_id: sentence-transformers/all-MiniLM-L6-v2
+    provider_id: sentence-transformers
+    provider_model_id: all-MiniLM-L6-v2
+    model_type: embedding
+    metadata:
+      embedding_dimension: 384
+registered_resources:
+  vector_dbs: []
+server:
+  port: 8321
+  auth:
+    provider_config:
+      type: custom
+      endpoint: http://localhost:9999/auth
+    access_policy:
+      - permit:
+          actions: [create, read, update, delete]
+        when: user is owner
+        description: "Users can fully manage their own resources"
+      - permit:
+          actions: [read]
+        when: user in owners namespaces
+        description: "Users can read resources in their namespace"
+      - permit:
+          actions: [create, read, update, delete]
+          resource: "model::*"
+        description: "All users can access models"
+      - permit:
+          actions: [create]
+          resource: "vector_store::*"
+        description: "All users can create vector stores"
+vector_stores:
+  default_provider_id: sqlite-vec
+  default_embedding_model:
+    provider_id: sentence-transformers
+    model_id: sentence-transformers/all-MiniLM-L6-v2
+  file_ingestion_params:
+    default_chunk_size_tokens: 512
+    default_chunk_overlap_tokens: 128
+  chunk_retrieval_params:
+    chunk_multiplier: 5
+    max_tokens_in_context: 4000
+    default_search_mode: vector

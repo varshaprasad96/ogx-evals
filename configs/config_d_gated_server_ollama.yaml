@@ -1,0 +1,123 @@
+# Config D (Server-Side + Gated) for Ollama
+# Uses locally-served models via Ollama — no API key needed.
+#
+# Prerequisites:
+#   ollama pull llama3.1:8b
+#   ollama pull nomic-embed-text
+#   ollama serve  # default port 11434
+#
+# Then:
+#   export OGX_MODEL_ID=ollama/llama3.1:8b
+#   export OGX_EMBEDDING_MODEL=ollama/nomic-embed-text
+#   export OGX_EMBEDDING_DIM=768
+#   llama stack run configs/config_d_gated_server_ollama.yaml --port 8321
+version: 2
+distro_name: experiment-gated-server-ollama
+apis:
+  - inference
+  - vector_io
+  - files
+  - file_processors
+  - responses
+  - tool_runtime
+providers:
+  inference:
+    - provider_id: ollama
+      provider_type: remote::ollama
+      config:
+        url: ${env.OLLAMA_URL:=http://localhost:11434}
+  vector_io:
+    - provider_id: sqlite-vec
+      provider_type: inline::sqlite-vec
+      config:
+        db_path: ${env.SQLITE_STORE_DIR:=~/.llama/distributions/experiment-d-ollama}/sqlite_vec.db
+        persistence:
+          namespace: vector_io::sqlite_vec
+          backend: kv_default
+  files:
+    - provider_id: builtin-files
+      provider_type: inline::localfs
+      config:
+        storage_dir: ${env.FILES_STORAGE_DIR:=~/.llama/distributions/experiment-d-ollama/files}
+        metadata_store:
+          table_name: files_metadata
+          backend: sql_default
+  file_processors:
+    - provider_id: pypdf
+      provider_type: inline::pypdf
+  responses:
+    - provider_id: builtin
+      provider_type: inline::builtin
+      config:
+        persistence:
+          agent_state:
+            namespace: agents
+            backend: kv_default
+          responses:
+            table_name: responses
+            backend: sql_default
+  tool_runtime:
+    - provider_id: file-search
+      provider_type: inline::file-search
+storage:
+  backends:
+    kv_default:
+      type: kv_sqlite
+      db_path: ${env.SQLITE_STORE_DIR:=~/.llama/distributions/experiment-d-ollama}/kvstore.db
+    sql_default:
+      type: sql_sqlite
+      db_path: ${env.SQLITE_STORE_DIR:=~/.llama/distributions/experiment-d-ollama}/sql_store.db
+  stores:
+    metadata:
+      namespace: registry
+      backend: kv_default
+    conversations:
+      table_name: openai_conversations
+      backend: sql_default
+models:
+  - model_id: ollama/llama3.1:8b
+    provider_id: ollama
+    provider_model_id: llama3.1:8b
+  - model_id: ollama/nomic-embed-text
+    provider_id: ollama
+    provider_model_id: nomic-embed-text
+    model_type: embedding
+    metadata:
+      embedding_dimension: 768
+registered_resources:
+  vector_dbs: []
+server:
+  port: 8321
+  auth:
+    provider_config:
+      type: custom
+      endpoint: http://localhost:9999/auth
+    access_policy:
+      - permit:
+          actions: [create, read, update, delete]
+        when: user is owner
+        description: "Users can fully manage their own resources"
+      - permit:
+          actions: [read]
+        when: user in owners namespaces
+        description: "Users can read resources in their namespace"
+      - permit:
+          actions: [create, read, update, delete]
+          resource: "model::*"
+        description: "All users can access models"
+      - permit:
+          actions: [create]
+          resource: "vector_store::*"
+        description: "All users can create vector stores"
+vector_stores:
+  default_provider_id: sqlite-vec
+  default_embedding_model:
+    provider_id: ollama
+    model_id: ollama/nomic-embed-text
+  file_ingestion_params:
+    default_chunk_size_tokens: 512
+    default_chunk_overlap_tokens: 128
+  chunk_retrieval_params:
+    chunk_multiplier: 5
+    max_tokens_in_context: 4000
+    default_search_mode: vector

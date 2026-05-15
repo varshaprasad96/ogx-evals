@@ -11,6 +11,17 @@
 #   - Python 3.12+, uv (https://docs.astral.sh/uv/)
 #   - OPENAI_API_KEY environment variable set
 #   - No other services on ports 8321 (OGX) or 9999 (auth server)
+#
+# Environment variables for model configuration:
+#   OGX_MODEL_ID          Chat model (default: openai/gpt-4o-mini)
+#   OGX_EMBEDDING_MODEL   Embedding model (default: openai/text-embedding-3-small)
+#   OGX_EMBEDDING_DIM     Embedding dimension (default: 1536)
+#
+# Example with local Ollama:
+#   export OGX_MODEL_ID=ollama/llama3.1:8b
+#   export OGX_EMBEDDING_MODEL=ollama/nomic-embed-text
+#   export OGX_EMBEDDING_DIM=768
+#   ./run_all.sh --config D
 
 set -euo pipefail
 

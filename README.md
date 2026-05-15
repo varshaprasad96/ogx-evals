@@ -19,9 +19,11 @@ We test a 2x2 matrix of configurations against a synthetic multi-tenant workload
 | Python | >= 3.12 | Tested on 3.12.11 |
 | uv | >= 0.7.0 | [Install guide](https://docs.astral.sh/uv/) |
 | Docker | >= 24.0 | Optional, for containerized execution |
-| llama-stack | 0.7.1 | Pinned in `uv.lock` |
+| OGX (formerly Llama Stack) | 0.7.1 | Pinned in `uv.lock`. PyPI: `ogx==0.7.1`. Source: [ogx-ai/ogx@v0.7.1](https://github.com/ogx-ai/ogx/tree/v0.7.1) |
 | openai (Python SDK) | 2.32.0 | Pinned in `uv.lock` |
 | OS | macOS or Linux | Tested on macOS 15 (Apple Silicon) and RHEL 9 (x86_64) |
+
+> **Exact version used for the paper**: All experiments were run with `ogx==0.7.1` (PyPI), which corresponds to the `llama-stack==0.7.1` release at [github.com/ogx-ai/ogx/releases/tag/v0.7.1](https://github.com/ogx-ai/ogx/releases/tag/v0.7.1). The `uv.lock` file pins this and all 107 transitive dependencies to exact versions.
 
 ### Hardware
 
